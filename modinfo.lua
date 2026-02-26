@@ -11,7 +11,7 @@ Alt + H 显示所有隐藏的实体。
 安全词：按下s h o 按住的情况下按下w 显示所有隐藏
 ]]
 author = "Tigerzzz (origin 萌萌的新)"
-version = "1.0"
+version = "1.1"
 api_version_dst = 10
 
 dst_compatible = true
