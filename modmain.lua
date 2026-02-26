@@ -5,6 +5,9 @@ GLOBAL.setmetatable(env, {
 })
 
 --#region apis
+local isServer = TheNet:GetIsServer()
+local function GetTick() return TheSim:GetTick() end
+
 local function toggleAnimState(inst, show, isShadow)
 	if inst.origin_mult == nil then
 		inst.origin_mult = {inst.AnimState:GetMultColour()}
@@ -38,46 +41,36 @@ end
 --#region 万物隐藏
 
 local hidetable = {}
-local function getRangeEnts(ent)
-    local x, y, z = ent.Transform:GetWorldPosition()
-    local ents = TheSim:FindEntities(x, y, z, 10)
-    return ents
+local hide_prefab = {}
+local function getRangeEnts(inst)
+    local x, y, z = inst.Transform:GetWorldPosition()
+    local insts = TheSim:FindEntities(x, y, z, 10)
+    return insts
 end
-local function hideSingle()
-	local ent = TheInput:GetWorldEntityUnderMouse()
-	local hud = TheInput:GetHUDEntityUnderMouse()
-	local ishudundermouse = not ent and hud
-	if ishudundermouse and hud and hud.Hide then
-		hidetable[hud] = true
-		hud:Hide()
-	elseif ent and ent.AnimState then
-		hidetable[ent] = true
+local function hideSingle(inst, show)
+	inst = inst or TheInput:GetWorldEntityUnderMouse()
+	if inst and inst.AnimState then
+		if show then
+			hidetable[inst] = nil
+		else
+			hidetable[inst] = true
+		end
 		-- ent.AnimState:SetScale(0, 0)
-		toggleAnimState(ent, false)
-	elseif ent and ent.Hide then
-		hidetable[ent] = true
-		ent:Hide()
+		toggleAnimState(inst, show)
 	end
 end
-local function hideRange()
-	local ent = TheInput:GetWorldEntityUnderMouse()
-	local hud = TheInput:GetHUDEntityUnderMouse()
-	local ishudundermouse = not ent and hud
-	if ishudundermouse and hud and hud.Hide then
-		hidetable[hud] = true
-		hud:Hide()
-	elseif ent then
-		local ents = getRangeEnts(ent)
-		for k, v in pairs(ents) do
-			if v.prefab and v.prefab == ent.prefab then
-				if v and v.AnimState then
-					hidetable[v] = true
-					-- v.AnimState:SetScale(0, 0)
-					toggleAnimState(v, false)
-				elseif v and v.Hide then
-					hidetable[v] = true
-					v:Hide()
-				end
+local function hideRange(inst)
+	inst = inst or TheInput:GetWorldEntityUnderMouse()
+	if not inst then return end
+	if type(inst.prefab) ~= "string" then return end
+	hide_prefab[inst] = true
+	local ents = getRangeEnts(inst)
+	for k, v in pairs(ents) do
+		if v.prefab and v.prefab == inst.prefab then
+			if v and v.AnimState then
+				hidetable[v] = true
+				-- v.AnimState:SetScale(0, 0)
+				toggleAnimState(v, false)
 			end
 		end
 	end
@@ -102,25 +95,11 @@ local function showallhide()
 			if k.Show then
 				k:Show()
 			end
-		elseif k and k:IsValid() and k.Show then
-			k:Show()
 		end
 	end
 	hidetable = {}
+	hide_prefab = {}
 end
-
-TheInput:AddKeyDownHandler(KEY_H, function()
-	if TheInput:IsKeyDown(KEY_LALT) then
-		showallhide()
-		return
-	end
-	if not TheInput:IsKeyDown(KEY_LCTRL) then return end
-	if TheInput:IsKeyDown(KEY_LSHIFT) then
-		hideSingle()
-	else
-		hideRange()
-	end
-end)
 
 if M_INSERT_BUTTON then
     M_INSERT_BUTTON("万物隐藏", {
@@ -239,10 +218,10 @@ local function hookTheSim()
 	local old = sim.GetEntitiesAtScreenPoint
 	function ind:GetEntitiesAtScreenPoint(...)
 		local old_result = old(self, ...)
-		if not table_any(hidetable) then return old_result end
+		if not (table_any(hidetable) or table_any(hide_prefab)) then return old_result end
 		local result = {}
-		for i, v in ipairs(old_result) do
-			if (not hidetable[v]) then
+		for _, v in ipairs(old_result) do
+			if (not hidetable[v]) and (not hide_prefab[v.prefab]) then
 				table.insert(result, v)
 			end
 		end
@@ -251,6 +230,44 @@ local function hookTheSim()
 	tiger_print("Hook TheSim GetEntitiesAtScreenPoint to null finish")
 end
 hookTheSim()
+--#endregion
+
+--#region Player Periodic Task
+local function playerPeriodicTask()
+	local x, y, z = ThePlayer.Transform:GetWorldPosition()
+	local insts = TheSim:FindEntities(x, y, z, 10)
+	for _, inst in pairs(insts) do
+		if inst and inst:IsValid() and inst.AnimState and hide_prefab[inst.prefab] then
+			hideSingle(inst)
+		end
+	end
+end
+
+local function doPlayerPeriodicTaskSafe()
+	local player = ThePlayer
+	if not player then return end
+	if player.rightHideTask then return end
+	player.rightHideTask = player:DoPeriodicTask(1, playerPeriodicTask)
+end
+--#endregion
+
+--#region inputs
+
+--#region main inputs
+
+TheInput:AddKeyDownHandler(KEY_H, function()
+	if TheInput:IsKeyDown(KEY_LALT) then
+		showallhide()
+		return
+	end
+	if not TheInput:IsKeyDown(KEY_LCTRL) then return end
+	if TheInput:IsKeyDown(KEY_LSHIFT) then
+		hideSingle()
+	else
+		hideRange()
+	end
+end)
+
 --#endregion
 
 --#region 安全词
@@ -262,6 +279,7 @@ end)
 --#endregion
 
 --#region test
+--[=[
 TheInput:AddKeyDownHandler(KEY_N, function()
 	if not TheInput:IsKeyDown(KEY_LCTRL) then return end
 	local entities = TheSim:GetEntitiesAtScreenPoint(TheSim:GetPosition())
@@ -276,4 +294,7 @@ TheInput:AddKeyDownHandler(KEY_N, function()
 		c_announce("hide count is " .. tostring(hidetable.size))
 	end
 end)
+--]=]
+--#endregion
+
 --#endregion
